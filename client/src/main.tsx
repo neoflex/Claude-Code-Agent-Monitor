@@ -11,3 +11,9 @@ createRoot(root).render(
     <App />
   </StrictMode>
 );
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {
+    // Registration failure is non-fatal; notifications fall back to new Notification()
+  });
+}
