@@ -42,12 +42,21 @@ function loadPrefs(): NotifPrefs {
   }
 }
 
-function notify(title: string, body: string) {
+async function notify(title: string, body: string) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   try {
-    new Notification(title, { body, icon: "/favicon.ico" });
+    if ("serviceWorker" in navigator) {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification(title, { body, icon: "/favicon.ico" });
+    } else {
+      new Notification(title, { body, icon: "/favicon.ico" });
+    }
   } catch {
-    // Safari/mobile may not support Notification constructor
+    try {
+      new Notification(title, { body, icon: "/favicon.ico" });
+    } catch {
+      // Silently ignore — browser may not support Notification constructor
+    }
   }
 }
 
