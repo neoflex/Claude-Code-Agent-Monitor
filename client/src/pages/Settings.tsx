@@ -855,12 +855,30 @@ export function Settings() {
               {/* Test notification */}
               <div className="pt-3 border-t border-border">
                 <button
-                  onClick={() => {
-                    if ("Notification" in window && Notification.permission === "granted") {
-                      new Notification("Agent Monitor", {
-                        body: "Notifications are working!",
-                        icon: "/favicon.ico",
-                      });
+                  onClick={async () => {
+                    if (!("Notification" in window) || Notification.permission !== "granted") return;
+                    try {
+                      if ("serviceWorker" in navigator) {
+                        const registration = await navigator.serviceWorker.ready;
+                        await registration.showNotification("Agent Monitor", {
+                          body: "Notifications are working!",
+                          icon: "/favicon.ico",
+                        });
+                      } else {
+                        new Notification("Agent Monitor", {
+                          body: "Notifications are working!",
+                          icon: "/favicon.ico",
+                        });
+                      }
+                    } catch {
+                      try {
+                        new Notification("Agent Monitor", {
+                          body: "Notifications are working!",
+                          icon: "/favicon.ico",
+                        });
+                      } catch {
+                        // Silently ignore
+                      }
                     }
                   }}
                   className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-surface-4 border border-border transition-colors"
