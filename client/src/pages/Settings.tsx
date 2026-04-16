@@ -41,7 +41,7 @@ import {
 import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
 import { fmt, fmtCost } from "../lib/format";
-import { subscribeToPush } from "../lib/push";
+import { subscribeToPush, unsubscribeFromPush } from "../lib/push";
 import { Tip } from "../components/Tip";
 import type { ModelPricing, WSMessage } from "../lib/types";
 
@@ -777,11 +777,17 @@ export function Settings() {
               </div>
               <Toggle
                 checked={notifPrefs.enabled}
-                onChange={(v) => {
-                  if (v && "Notification" in window && Notification.permission !== "granted") {
-                    requestNotifPermission();
+                onChange={async (v) => {
+                  if (v) {
+                    if ("Notification" in window && Notification.permission !== "granted") {
+                      requestNotifPermission();
+                    } else {
+                      updateNotifPrefs({ enabled: true });
+                      await subscribeToPush();
+                    }
                   } else {
-                    updateNotifPrefs({ enabled: v });
+                    updateNotifPrefs({ enabled: false });
+                    await unsubscribeFromPush();
                   }
                 }}
                 label="Enable Browser Notifications"
