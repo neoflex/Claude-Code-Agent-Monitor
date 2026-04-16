@@ -6,17 +6,6 @@ import type { WSMessage } from "../../lib/types";
 
 const NOTIF_KEY = "agent-monitor-notifications";
 
-// Node 25 has a built-in localStorage that only works with --localstorage-file flag.
-// We stub it here so tests work regardless of the node version.
-const localStorageStore: Record<string, string> = {};
-const localStorageMock = {
-  setItem: (key: string, value: string) => { localStorageStore[key] = value; },
-  getItem: (key: string) => localStorageStore[key] ?? null,
-  removeItem: (key: string) => { delete localStorageStore[key]; },
-  clear: () => { Object.keys(localStorageStore).forEach(k => delete localStorageStore[k]); },
-};
-vi.stubGlobal("localStorage", localStorageMock);
-
 const enabledPrefs = JSON.stringify({
   enabled: true,
   onNewSession: true,
@@ -43,11 +32,16 @@ function makeSessionCreatedMsg(): WSMessage {
 }
 
 describe("useNotifications", () => {
-  const mockShowNotification = vi.fn();
-  const mockRegistration = { showNotification: mockShowNotification };
-
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("localStorage", {
+      _store: {} as Record<string, string>,
+      getItem(key: string) { return this._store[key] ?? null; },
+      setItem(key: string, value: string) { this._store[key] = value; },
+      removeItem(key: string) { delete this._store[key]; },
+      clear() { this._store = {}; },
+    });
+
     localStorage.setItem(NOTIF_KEY, enabledPrefs);
 
     Object.defineProperty(window, "Notification", {
@@ -60,45 +54,46 @@ describe("useNotifications", () => {
       configurable: true,
     });
 
+    // Mock fetch globally
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({}) }));
+
+    // Mock serviceWorker so subscribeToPush short-circuits (no PushManager)
     Object.defineProperty(navigator, "serviceWorker", {
-      value: { ready: Promise.resolve(mockRegistration) },
+      value: { ready: Promise.resolve({ pushManager: { getSubscription: vi.fn().mockResolvedValue(null) } }) },
+      writable: true,
+      configurable: true,
+    });
+    Object.defineProperty(window, "PushManager", {
+      value: undefined,
       writable: true,
       configurable: true,
     });
   });
 
   afterEach(() => {
-    localStorage.removeItem(NOTIF_KEY);
+    vi.unstubAllGlobals();
   });
 
-  it("calls showNotification via service worker when a session is created", async () => {
+  it("calls POST /api/push/send when a session is created", async () => {
     renderHook(() => useNotifications());
 
     await act(async () => {
       eventBus.publish(makeSessionCreatedMsg());
-      // flush the async notify() promise
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    expect(mockShowNotification).toHaveBeenCalledWith(
-      "New Session",
-      expect.objectContaining({ body: "Test Session" })
+    expect(vi.mocked(fetch)).toHaveBeenCalledWith(
+      "/api/push/send",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.stringContaining("New Session"),
+      })
     );
   });
 
-  it("falls back to new Notification() when serviceWorker is unavailable", async () => {
-    const NotificationConstructor = vi.fn();
-    Object.defineProperty(window, "Notification", {
-      value: Object.assign(NotificationConstructor, { permission: "granted" }),
-      writable: true,
-      configurable: true,
-    });
-    Object.defineProperty(navigator, "serviceWorker", {
-      value: undefined,
-      writable: true,
-      configurable: true,
-    });
+  it("does not call fetch when notifications are disabled", async () => {
+    localStorage.setItem(NOTIF_KEY, JSON.stringify({ enabled: false }));
 
     renderHook(() => useNotifications());
 
@@ -107,9 +102,9 @@ describe("useNotifications", () => {
       await Promise.resolve();
     });
 
-    expect(NotificationConstructor).toHaveBeenCalledWith(
-      "New Session",
-      expect.objectContaining({ body: "Test Session" })
+    const pushCalls = vi.mocked(fetch).mock.calls.filter(
+      ([url]) => url === "/api/push/send"
     );
+    expect(pushCalls).toHaveLength(0);
   });
 });

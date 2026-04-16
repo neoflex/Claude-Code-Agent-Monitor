@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { eventBus } from "../lib/eventBus";
+import { subscribeToPush } from "../lib/push";
 import type { WSMessage, Session, Agent, DashboardEvent } from "../lib/types";
 
 const NOTIF_KEY = "agent-monitor-notifications";
@@ -12,50 +13,43 @@ interface NotifPrefs {
   onSubagentSpawn: boolean;
 }
 
+const DEFAULT_PREFS: NotifPrefs = {
+  enabled: false,
+  onNewSession: true,
+  onSessionError: true,
+  onSessionComplete: false,
+  onSubagentSpawn: false,
+};
+
 function loadPrefs(): NotifPrefs {
   try {
     const raw = localStorage.getItem(NOTIF_KEY);
-    if (!raw)
-      return {
-        enabled: false,
-        onNewSession: true,
-        onSessionError: true,
-        onSessionComplete: false,
-        onSubagentSpawn: false,
-      };
-    return {
-      enabled: false,
-      onNewSession: true,
-      onSessionError: true,
-      onSessionComplete: false,
-      onSubagentSpawn: false,
-      ...JSON.parse(raw),
-    };
+    if (!raw) return { ...DEFAULT_PREFS };
+    return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
   } catch {
-    return {
-      enabled: false,
-      onNewSession: true,
-      onSessionError: true,
-      onSessionComplete: false,
-      onSubagentSpawn: false,
-    };
+    return { ...DEFAULT_PREFS };
   }
 }
 
 async function notify(title: string, body: string) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   try {
-    if ("serviceWorker" in navigator) {
-      const registration = await navigator.serviceWorker.ready;
-      await registration.showNotification(title, { body, icon: "/favicon.ico" });
-    } else {
-      new Notification(title, { body, icon: "/favicon.ico" });
-    }
+    await fetch("/api/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body }),
+    });
   } catch {
+    // Server unreachable — fall back to local notification
     try {
-      new Notification(title, { body, icon: "/favicon.ico" });
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, { body, icon: "/favicon.ico" });
+      } else {
+        new Notification(title, { body, icon: "/favicon.ico" });
+      }
     } catch {
-      // Silently ignore — browser may not support Notification constructor
+      // Silently ignore
     }
   }
 }
@@ -66,40 +60,45 @@ async function notify(title: string, body: string) {
  */
 export function useNotifications() {
   useEffect(() => {
+    const prefs = loadPrefs();
+    if (prefs.enabled && "Notification" in window && Notification.permission === "granted") {
+      subscribeToPush().catch(() => {});
+    }
+
     return eventBus.subscribe((msg: WSMessage) => {
-      const prefs = loadPrefs();
-      if (!prefs.enabled) return;
+      const currentPrefs = loadPrefs();
+      if (!currentPrefs.enabled) return;
 
       switch (msg.type) {
         case "session_created": {
-          if (!prefs.onNewSession) return;
-          const s = msg.data as Session;
-          notify("New Session", s.name || `Session ${s.id.slice(0, 8)}`);
+          if (!currentPrefs.onNewSession) return;
+          const session = msg.data as Session;
+          notify("New Session", session.name || `Session ${session.id.slice(0, 8)}`);
           break;
         }
         case "session_updated": {
-          const s = msg.data as Session;
-          if (s.status === "error" && prefs.onSessionError) {
-            notify("Session Error", s.name || `Session ${s.id.slice(0, 8)}`);
+          const session = msg.data as Session;
+          if (session.status === "error" && currentPrefs.onSessionError) {
+            notify("Session Error", session.name || `Session ${session.id.slice(0, 8)}`);
           }
           break;
         }
         case "agent_created": {
-          if (!prefs.onSubagentSpawn) return;
-          const a = msg.data as Agent;
-          if (a.type === "subagent") {
-            notify("Subagent Spawned", a.name);
+          if (!currentPrefs.onSubagentSpawn) return;
+          const agent = msg.data as Agent;
+          if (agent.type === "subagent") {
+            notify("Subagent Spawned", agent.name);
           }
           break;
         }
         case "new_event": {
-          const ev = msg.data as DashboardEvent;
-          if (ev.event_type === "Stop" && prefs.onSessionComplete) {
-            notify("Claude Finished Responding", ev.summary || "Ready for input");
-          } else if (ev.event_type === "SessionEnd" && prefs.onSessionComplete) {
-            notify("Session Completed", ev.summary || "Session closed");
-          } else if (ev.event_type === "Notification") {
-            notify("Claude Code", ev.summary || "Notification");
+          const dashboardEvent = msg.data as DashboardEvent;
+          if (dashboardEvent.event_type === "Stop" && currentPrefs.onSessionComplete) {
+            notify("Claude Finished Responding", dashboardEvent.summary || "Ready for input");
+          } else if (dashboardEvent.event_type === "SessionEnd" && currentPrefs.onSessionComplete) {
+            notify("Session Completed", dashboardEvent.summary || "Session closed");
+          } else if (dashboardEvent.event_type === "Notification") {
+            notify("Claude Code", dashboardEvent.summary || "Notification");
           }
           break;
         }
