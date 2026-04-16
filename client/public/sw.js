@@ -2,12 +2,8 @@ self.addEventListener("push", (event) => {
   const data = event.data
     ? event.data.json()
     : { title: "Agent Monitor", body: "New notification" };
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: "/favicon.ico",
-    })
-  );
+  const { title, ...options } = data;
+  event.waitUntil(self.registration.showNotification(title, { silent: false, ...options }));
 });
 
 self.addEventListener("notificationclick", (event) => {

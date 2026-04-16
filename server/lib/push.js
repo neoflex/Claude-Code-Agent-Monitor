@@ -17,7 +17,7 @@ function loadOrCreateVapidKeys() {
 const vapidKeys = loadOrCreateVapidKeys();
 
 webpush.setVapidDetails(
-  "mailto:admin@localhost",
+  "https://github.com/hoangsonww/Claude-Code-Agent-Monitor",
   vapidKeys.publicKey,
   vapidKeys.privateKey
 );
@@ -30,7 +30,14 @@ async function sendPushToAll(db, title, body) {
   const subscriptions = db.prepare("SELECT * FROM push_subscriptions").all();
   if (subscriptions.length === 0) return;
 
-  const payload = JSON.stringify({ title, body });
+  const payload = JSON.stringify({
+    title,
+    body,
+    icon: "https://raw.githubusercontent.com/hoangsonww/Claude-Code-Agent-Monitor/main/client/public/favicon.ico",
+    badge: "https://raw.githubusercontent.com/hoangsonww/Claude-Code-Agent-Monitor/main/client/public/favicon.ico",
+    silent: false,
+    sound: "default",
+  });
   const results = await Promise.allSettled(
     subscriptions.map((sub) =>
       webpush.sendNotification(
