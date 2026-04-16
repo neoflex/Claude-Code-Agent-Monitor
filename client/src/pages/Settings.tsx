@@ -48,6 +48,7 @@ import {
 import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
 import { fmt, fmtCost, getCurrentLocale } from "../lib/format";
+import { subscribeToPush, unsubscribeFromPush } from "../lib/push";
 import { Tip } from "../components/Tip";
 import type { ModelPricing, WSMessage } from "../lib/types";
 
@@ -269,6 +270,7 @@ export function Settings() {
     const perm = await Notification.requestPermission();
     if (perm === "granted") {
       updateNotifPrefs({ enabled: true });
+      await subscribeToPush();
     }
   };
 
@@ -787,11 +789,17 @@ export function Settings() {
               </div>
               <Toggle
                 checked={notifPrefs.enabled}
-                onChange={(v) => {
-                  if (v && "Notification" in window && Notification.permission !== "granted") {
-                    requestNotifPermission();
+                onChange={async (v) => {
+                  if (v) {
+                    if ("Notification" in window && Notification.permission !== "granted") {
+                      requestNotifPermission();
+                    } else {
+                      updateNotifPrefs({ enabled: true });
+                      await subscribeToPush();
+                    }
                   } else {
-                    updateNotifPrefs({ enabled: v });
+                    updateNotifPrefs({ enabled: false });
+                    await unsubscribeFromPush();
                   }
                 }}
                 label={t("notifications.enable")}
@@ -865,13 +873,17 @@ export function Settings() {
 
               <div className="pt-3 border-t border-border">
                 <button
-                  onClick={() => {
-                    if ("Notification" in window && Notification.permission === "granted") {
-                      new Notification(t("notifications.testTitle"), {
+                  onClick={async () => {
+                    if (!("Notification" in window) || Notification.permission !== "granted")
+                      return;
+                    await fetch("/api/push/send", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        title: t("notifications.testTitle"),
                         body: t("notifications.testBody"),
-                        icon: "/favicon.ico",
-                      });
-                    }
+                      }),
+                    });
                   }}
                   className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-surface-4 border border-border transition-colors"
                 >

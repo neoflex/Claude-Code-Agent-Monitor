@@ -10,6 +10,10 @@ import App from "./App";
 import "./i18n";
 import "./index.css";
 
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("/sw.js").catch(() => {});
+}
+
 const root = document.getElementById("root");
 if (!root) throw new Error("Root element not found");
 

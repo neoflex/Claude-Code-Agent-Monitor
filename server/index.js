@@ -22,6 +22,7 @@ const analyticsRouter = require("./routes/analytics");
 const pricingRouter = require("./routes/pricing");
 const settingsRouter = require("./routes/settings");
 const workflowsRouter = require("./routes/workflows");
+const pushRouter = require("./routes/push");
 
 function createApp() {
   const app = express();
@@ -39,6 +40,7 @@ function createApp() {
   app.use("/api/pricing", pricingRouter);
   app.use("/api/settings", settingsRouter);
   app.use("/api/workflows", workflowsRouter);
+  app.use("/api/push", pushRouter);
   app.get("/api/openapi.json", (_req, res) => {
     res.json(openApiSpec);
   });

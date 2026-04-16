@@ -7,6 +7,7 @@
 import { useEffect } from "react";
 import i18n from "../i18n";
 import { eventBus } from "../lib/eventBus";
+import { subscribeToPush } from "../lib/push";
 import type { WSMessage, Session, Agent, DashboardEvent } from "../lib/types";
 
 const NOTIF_KEY = "agent-monitor-notifications";
@@ -49,17 +50,36 @@ function loadPrefs(): NotifPrefs {
   }
 }
 
-function notify(title: string, body: string) {
+async function notify(title: string, body: string) {
   if (!("Notification" in window) || Notification.permission !== "granted") return;
   try {
-    new Notification(title, { body, icon: "/favicon.ico" });
+    await fetch("/api/push/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ title, body }),
+    });
   } catch {
-    // Safari/mobile may not support Notification constructor
+    // Server unreachable — fall back to local notification
+    try {
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.ready;
+        await registration.showNotification(title, { body, icon: "/favicon.ico", silent: false });
+      } else {
+        new Notification(title, { body, icon: "/favicon.ico" });
+      }
+    } catch {
+      // Silently ignore
+    }
   }
 }
 
 export function useNotifications() {
   useEffect(() => {
+    const prefs = loadPrefs();
+    if (prefs.enabled && "Notification" in window && Notification.permission === "granted") {
+      subscribeToPush().catch(() => {});
+    }
+
     return eventBus.subscribe((msg: WSMessage) => {
       const prefs = loadPrefs();
       if (!prefs.enabled) return;
