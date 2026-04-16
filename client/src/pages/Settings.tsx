@@ -41,6 +41,7 @@ import {
 import { api } from "../lib/api";
 import { eventBus } from "../lib/eventBus";
 import { fmt, fmtCost } from "../lib/format";
+import { subscribeToPush } from "../lib/push";
 import { Tip } from "../components/Tip";
 import type { ModelPricing, WSMessage } from "../lib/types";
 
@@ -258,6 +259,7 @@ export function Settings() {
     const perm = await Notification.requestPermission();
     if (perm === "granted") {
       updateNotifPrefs({ enabled: true });
+      await subscribeToPush();
     }
   };
 
@@ -857,29 +859,11 @@ export function Settings() {
                 <button
                   onClick={async () => {
                     if (!("Notification" in window) || Notification.permission !== "granted") return;
-                    try {
-                      if ("serviceWorker" in navigator) {
-                        const registration = await navigator.serviceWorker.ready;
-                        await registration.showNotification("Agent Monitor", {
-                          body: "Notifications are working!",
-                          icon: "/favicon.ico",
-                        });
-                      } else {
-                        new Notification("Agent Monitor", {
-                          body: "Notifications are working!",
-                          icon: "/favicon.ico",
-                        });
-                      }
-                    } catch {
-                      try {
-                        new Notification("Agent Monitor", {
-                          body: "Notifications are working!",
-                          icon: "/favicon.ico",
-                        });
-                      } catch {
-                        // Silently ignore
-                      }
-                    }
+                    await fetch("/api/push/send", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ title: "Agent Monitor", body: "Notifications are working!" }),
+                    });
                   }}
                   className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md text-gray-400 hover:text-gray-200 hover:bg-surface-4 border border-border transition-colors"
                 >
